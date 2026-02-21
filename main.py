@@ -206,6 +206,9 @@ async def rfid_entry(payload: RFIDEntry, db=Depends(get_db)):
 
     timestamp = payload.timestamp or datetime.now(timezone.utc)
 
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.replace(tzinfo=None)
+
     async with db.acquire() as conn:
         async with conn.transaction():
 
