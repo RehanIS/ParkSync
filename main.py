@@ -100,6 +100,11 @@ async def get_lot(db=Depends(get_db)):
             zone["id"]
         )
 
+        reserved = await db.fetchval(
+            "SELECT COUNT(*) FROM parking_slots WHERE zone_id=$1 AND status='RESERVED'",
+            zone["id"]
+        )
+
         occupied = await db.fetchval(
             "SELECT COUNT(*) FROM parking_slots WHERE zone_id=$1 AND status='OCCUPIED'",
             zone["id"]
@@ -109,6 +114,7 @@ async def get_lot(db=Depends(get_db)):
             "id": str(zone["id"]),
             "name": zone["name"],
             "capacity": zone["capacity"],
+            "reserved": reserved,
             "occupied": occupied,
             "baseRate": zone["base_rate"],
             "slots": [
