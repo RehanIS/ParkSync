@@ -37,8 +37,8 @@ async def startup():
     app.state.pool = await asyncpg.create_pool(
         DATABASE_URL,
         ssl="require",
-        min_size=1,
-        max_size=20
+        min_size=2,
+        max_size=10
     )
 
 @app.on_event("shutdown")
