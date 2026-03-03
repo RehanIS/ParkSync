@@ -1,7 +1,9 @@
 import os
 from datetime import datetime, timezone
 from typing import Optional
-
+import time
+import platform
+import socket
 import asyncpg
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +16,22 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 print(DATABASE_URL)
 ADMIN_KEY = os.getenv("ADMIN_KEY", "demo_key")
 
-app = FastAPI(title="Techathon Demo Smart Parking API v1.4")
+app = FastAPI(
+    title="ParkSync Enterprise Smart Parking Platform API",
+    version="2.0.0",
+    description="""
+Enterprise-grade Smart Parking Backend
+
+Features:
+- Online Reservations
+- Drive-in Auto Allocation
+- Vision Correction Engine
+- Real-time Slot State Management
+- Analytics & Monitoring
+- Admin Override Controls
+- System Diagnostics
+"""
+)
 
 # ---------------------------
 # CORS
@@ -29,6 +46,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+    
 # ---------------------------
 # DB Pool
 # ---------------------------
@@ -415,7 +433,163 @@ async def vision_event(payload: VisionEvent, db=Depends(get_db)):
 
         return {"message": "Slot verified"}
 
-    # ---------------------------
+# ---------------------------
+# SYSTEM DIAGNOSTICS
+# ---------------------------
+@app.get("/api/v1/system/diagnostics", tags=["System"])
+async def system_diagnostics(db=Depends(get_db)):
+
+    start = time.perf_counter()
+
+    try:
+        db_start = time.perf_counter()
+        result = await db.fetchval("SELECT 1;")
+        db_latency = round((time.perf_counter() - db_start) * 1000, 2)
+
+        pool = app.state.pool
+
+        total_time = round((time.perf_counter() - start) * 1000, 2)
+
+        return {
+            "status": "healthy",
+            "database_connected": result == 1,
+            "db_latency_ms": db_latency,
+            "total_response_time_ms": total_time,
+            "server_time_utc": datetime.utcnow().isoformat(),
+            "instance": socket.gethostname(),
+            "python_version": platform.python_version(),
+            "pool": {
+                "min": pool._minsize,
+                "max": pool._maxsize
+            }
+        }
+
+    except Exception as e:
+        return {
+            "status": "degraded",
+            "database_connected": False,
+            "error": str(e)
+        }
+
+# ---------------------------
+# SYSTEM STATUS
+# ---------------------------
+@app.get("/api/v1/system/status", tags=["System"])
+async def system_status():
+    return {
+        "service": "ParkSync Backend",
+        "status": "online",
+        "timestamp": datetime.utcnow().isoformat()
+        }
+
+# ---------------------------
+# ADMIN ANALYTICS
+# ---------------------------
+@app.get("/api/v1/admin/analytics", tags=["Admin"])
+async def admin_analytics(admin_key: str = Header(...), db=Depends(get_db)):
+
+    if admin_key != ADMIN_KEY:
+        raise HTTPException(403, "Unauthorized")
+
+    total_slots = await db.fetchval("SELECT COUNT(*) FROM parking_slots")
+    occupied = await db.fetchval("SELECT COUNT(*) FROM parking_slots WHERE status='OCCUPIED'")
+    reserved = await db.fetchval("SELECT COUNT(*) FROM parking_slots WHERE status='RESERVED'")
+
+    total_bookings = await db.fetchval("SELECT COUNT(*) FROM bookings")
+    drivein = await db.fetchval("SELECT COUNT(*) FROM bookings WHERE booking_type='DRIVEIN'")
+    online = await db.fetchval("SELECT COUNT(*) FROM bookings WHERE booking_type='ONLINE'")
+
+    occupancy_rate = round((occupied / total_slots) * 100, 2) if total_slots else 0
+
+    return {
+        "total_slots": total_slots,
+        "occupied": occupied,
+        "reserved": reserved,
+        "occupancy_rate_percent": occupancy_rate,
+        "total_bookings": total_bookings,
+        "drivein_percent": round((drivein / total_bookings) * 100, 2) if total_bookings else 0,
+        "online_percent": round((online / total_bookings) * 100, 2) if total_bookings else 0
+    }
+
+# ---------------------------
+# ADMIN BOOKINGS
+# ---------------------------
+@app.get("/api/v1/admin/bookings", tags=["Admin"])
+async def admin_bookings(admin_key: str = Header(...), db=Depends(get_db)):
+
+    if admin_key != ADMIN_KEY:
+        raise HTTPException(403, "Unauthorized")
+
+    rows = await db.fetch("SELECT * FROM bookings ORDER BY created_at DESC")
+    return [dict(r) for r in rows]
+
+# ---------------------------
+# ADMIN ACTIVE SESSIONS
+# ---------------------------
+@app.get("/api/v1/admin/active-sessions", tags=["Admin"])
+async def active_sessions(admin_key: str = Header(...), db=Depends(get_db)):
+
+    if admin_key != ADMIN_KEY:
+        raise HTTPException(403, "Unauthorized")
+
+    rows = await db.fetch("SELECT * FROM bookings WHERE status='ACTIVE'")
+    return [dict(r) for r in rows]
+
+
+# ---------------------------
+# ADMIN FORCE FREE SLOT
+# ---------------------------
+@app.post("/api/v1/admin/override/slot-free", tags=["Admin"])
+async def force_free_slot(
+    slot_id: str,
+    admin_key: str = Header(...),
+    db=Depends(get_db)
+):
+
+    if admin_key != ADMIN_KEY:
+        raise HTTPException(403, "Unauthorized")
+
+    await db.execute(
+        "UPDATE parking_slots SET status='FREE', vehicle_no=NULL WHERE id=$1::uuid",
+        slot_id
+    )
+
+    return {"message": "Slot manually freed"}
+
+# ---------------------------
+# ADMIN CANCEL BOOKING
+# ---------------------------
+@app.post("/api/v1/admin/cancel-booking", tags=["Admin"])
+async def cancel_booking(
+    booking_id: str,
+    admin_key: str = Header(...),
+    db=Depends(get_db)
+):
+
+    if admin_key != ADMIN_KEY:
+        raise HTTPException(403, "Unauthorized")
+
+    booking = await db.fetchrow(
+        "SELECT * FROM bookings WHERE id=$1::uuid",
+        booking_id
+    )
+
+    if not booking:
+        raise HTTPException(404, "Booking not found")
+
+    await db.execute(
+        "UPDATE bookings SET status='CANCELLED' WHERE id=$1::uuid",
+        booking_id
+    )
+
+    await db.execute(
+        "UPDATE parking_slots SET status='FREE', vehicle_no=NULL WHERE id=$1::uuid",
+        booking["slot_id"]
+    )
+
+    return {"message": "Booking cancelled and slot released"}
+
+# ---------------------------
 # ADMIN: RESET
 # ---------------------------
 @app.post(
