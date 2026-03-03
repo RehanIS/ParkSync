@@ -53,10 +53,10 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     app.state.pool = await asyncpg.create_pool(
-        DATABASE_URL,
-        ssl="require",
+        dsn=DATABASE_URL,
         min_size=2,
-        max_size=10
+        max_size=10,
+        command_timeout=30
     )
 
 @app.on_event("shutdown")
