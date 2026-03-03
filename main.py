@@ -630,7 +630,7 @@ async def reset_system(
 @app.post(
     "/api/v1/admin/demo",
     tags=["Admin"],
-    summary="Seed demo data for hackathon",
+    summary="Seed demo data",
     description="Creates 2 demo parking lots (Premium & Standard) with 6 slots each (A1-A6). Requires admin_key header."
 )
 async def setup_demo(
@@ -649,7 +649,7 @@ async def setup_demo(
             lot_1_id = await conn.fetchval(
                 """
                 INSERT INTO parking_lots (name, location, total_capacity)
-                VALUES ('Techathon Premium Lot', 'Main Campus - VIP Gate', 6)
+                VALUES ('Vishwakarma University Main Parking', 'Eco Campus - Gate 01', 6)
                 RETURNING id
                 """
             )
@@ -657,7 +657,7 @@ async def setup_demo(
             zone_1_id = await conn.fetchval(
                 """
                 INSERT INTO zones (lot_id, name, capacity, base_rate)
-                VALUES ($1, 'Premium Zone', 6, 30.0)
+                VALUES ($1, 'Faculty Zone', 6, 30.0)
                 RETURNING id
                 """,
                 lot_1_id
@@ -677,7 +677,7 @@ async def setup_demo(
             lot_2_id = await conn.fetchval(
                 """
                 INSERT INTO parking_lots (name, location, total_capacity)
-                VALUES ('Techathon Standard Lot', 'Main Campus - General', 6)
+                VALUES ('Vishwakarma University Parking', 'S&T Campus - Gate 02', 6)
                 RETURNING id
                 """
             )
